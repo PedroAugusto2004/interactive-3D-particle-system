@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Hand Particle System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; }
+        
+        #ui-layer {
+            position: absolute;
+            top: 20px; left: 20px;
+            z-index: 10;
+            background: rgba(10, 10, 10, 0.85);
+            padding: 20px;
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: white;
+            width: 220px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        h2 { margin: 0 0 15px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #666; }
+        
+        .control-group { margin-bottom: 20px; }
+
+        button {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #ddd;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+            text-align: left;
+            font-size: 13px;
+        }
+        button:hover { background: rgba(255,255,255,0.1); border-color: white; }
+        button.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+
+        input[type="color"] { width: 100%; height: 35px; border: none; border-radius: 6px; cursor: pointer; background: none; }
+
+        #status {
+            font-size: 11px; color: #4caf50; margin-top: 10px; display: flex; align-items: center; gap: 6px;
+        }
+        .dot { width: 8px; height: 8px; background: #4caf50; border-radius: 50%; display: inline-block; }
+        
+        #video-input {
+            position: absolute; bottom: 20px; right: 20px; width: 200px;
+            border-radius: 12px; opacity: 0.3; transform: scaleX(-1);
+            pointer-events: none;
+        }
+        
+        .instruction { font-size: 11px; color: #888; margin-top: 4px; }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="control-group">
+            <h2>Geometry</h2>
+            <button class="active" onclick="setShape('sphere')">🪐 Nebula Sphere</button>
+            <button onclick="setShape('heart')">❤️ Pulse Heart</button>
+            <button onclick="setShape('dna')">🧬 DNA Helix</button>
+            <button onclick="setShape('plane')">🌌 Warp Plane</button>
+        </div>
+
+        <div class="control-group">
+            <h2>Atmosphere</h2>
+            <input type="color" id="colorPicker" value="#00aaff">
+        </div>
+
+        <div id="status"><span class="dot"></span> Waiting for camera...</div>
+        
+        <div style="margin-top:15px; border-top:1px solid #333; padding-top:10px;">
+            <h2>Gestures</h2>
+            <div class="instruction">↔️ <b>Scale:</b> Distance between hands</div>
+            <div class="instruction">🔄 <b>Rotate:</b> Tilt hands like a wheel</div>
+            <div class="instruction">✋ <b>Move:</b> Move both hands to pan</div>
+        </div>
+    </div>
+
+    <video id="video-input"></video>
+
+    <script>
+        // --- 1. SYSTEM STATE & CONSTANTS ---
+        const CONFIG = {
+            particleCount: 20000,
+            camZ: 120,
+            smoothing: 0.12 // Lower = smoother but slower, Higher = responsive but jittery
+        };
+
+        const STATE = {
+            shape: 'sphere',
+            handDistance: 1, // Target Scale
+            handAngle: 0,    // Target Rotation Z
+            handCenter: { x: 0, y: 0 }, // Target Position
+            
+            // Smoothed values (Current physics state)
+            smoothScale: 1,
+            smoothRotation: 0,
+            smoothX: 0,
+            smoothY: 0
+        };
+
+        // --- 2. THREE.JS INITIALIZATION ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.002); // Depth fog
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = CONFIG.camZ;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Performance opt
+        document.body.appendChild(renderer.domElement);
+
+        // --- 3. ADVANCED PARTICLE ENGINE ---
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(CONFIG.particleCount * 3);
+        const targets = new Float32Array(CONFIG.particleCount * 3);
+        const colors = new Float32Array(CONFIG.particleCount * 3); // Per-particle color
+
+        // Initial setup
+        const colorObj = new THREE.Color('#00aaff');
+        for(let i=0; i<CONFIG.particleCount; i++) {
+            positions[i*3] = (Math.random()-0.5)*200;
+            positions[i*3+1] = (Math.random()-0.5)*200;
+            positions[i*3+2] = (Math.random()-0.5)*200;
+            
+            // Slight color variation
+            colors[i*3] = colorObj.r + (Math.random()*0.2);
+            colors[i*3+1] = colorObj.g + (Math.random()*0.2);
+            colors[i*3+2] = colorObj.b + (Math.random()*0.2);
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        // Create a soft glow texture via Canvas API (no external image needed)
+        function getTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(16,16,0,16,16,16);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0,32,32);
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        const material = new THREE.PointsMaterial({
+            size: 1.5,
+            map: getTexture(),
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.9
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        // --- 4. SHAPE MATHEMATICS ---
+        function updateTargets(shape) {
+            STATE.shape = shape;
+            const cnt = CONFIG.particleCount;
+            
+            for(let i=0; i<cnt; i++) {
+                let x, y, z;
+                const idx = i*3;
+
+                if (shape === 'sphere') {
+                    const r = 40;
+                    const phi = Math.acos( -1 + ( 2 * i ) / cnt );
+                    const theta = Math.sqrt( cnt * Math.PI ) * phi;
+                    x = r * Math.cos(theta) * Math.sin(phi);
+                    y = r * Math.sin(theta) * Math.sin(phi);
+                    z = r * Math.cos(phi);
+                } 
+                else if (shape === 'heart') {
+                    // 3D Heart logic
+                    const t = (i / cnt) * Math.PI * 2;
+                    const r = 2.5; 
+                    // Random distribution inside volume
+                    const rand = Math.random();
+                    x = 16 * Math.pow(Math.sin(t), 3) * r * rand;
+                    y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * r * rand;
+                    z = (Math.random() - 0.5) * 20; 
+                }
+                else if (shape === 'dna') {
+                    const t = (i / cnt) * 20 * Math.PI; // High frequency
+                    const radius = 20;
+                    // Double Helix logic
+                    const strand = i % 2 === 0 ? 1 : -1; 
+                    x = Math.cos(t) * radius;
+                    y = (i / cnt * 100) - 50; // Vertical spread
+                    z = Math.sin(t) * radius * strand + (strand * 10);
+                }
+                else if (shape === 'plane') {
+                     // Wavy Plane
+                     const w = 100; // width
+                     const side = Math.sqrt(cnt);
+                     const u = (i % side) / side;
+                     const v = Math.floor(i / side) / side;
+                     x = (u - 0.5) * w * 2;
+                     z = (v - 0.5) * w * 2;
+                     y = Math.sin(u * Math.PI * 4) * 10 + Math.cos(v * Math.PI * 4) * 10;
+                }
+
+                targets[idx] = x;
+                targets[idx+1] = y;
+                targets[idx+2] = z;
+            }
+        }
+        updateTargets('sphere'); // Init
+
+        // --- 5. MEDIAPIPE LOGIC (THE BRAIN) ---
+        const videoElement = document.getElementById('video-input');
+        const statusElement = document.getElementById('status');
+
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                statusElement.innerHTML = '<span class="dot" style="background:#4caf50"></span> Hands Detected';
+                
+                const handA = results.multiHandLandmarks[0][9]; // Middle Knuckle
+                const handB = results.multiHandLandmarks[1][9];
+
+                // 1. Calculate Distance (Scaling)
+                const dist = Math.sqrt(
+                    Math.pow(handA.x - handB.x, 2) + 
+                    Math.pow(handA.y - handB.y, 2)
+                );
+                // Map 0.1->0.7 to 0.5->2.5 scale
+                STATE.handDistance = Math.max(0.2, Math.min(dist * 3.5, 3.5));
+
+                // 2. Calculate Center Point (Translation)
+                // Remap 0-1 coord space to -50 to 50 world space
+                const cx = (handA.x + handB.x) / 2;
+                const cy = (handA.y + handB.y) / 2;
+                STATE.handCenter.x = -(cx - 0.5) * 150; // Invert X for mirror feel
+                STATE.handCenter.y = -(cy - 0.5) * 100; // Invert Y
+
+                // 3. Calculate Angle (Rotation "Steering Wheel")
+                const dx = handA.x - handB.x;
+                const dy = handA.y - handB.y;
+                STATE.handAngle = -Math.atan2(dy, dx); // Negative to match direction
+
+            } else {
+                statusElement.innerHTML = '<span class="dot" style="background:orange"></span> Show two hands';
+                // Reset slowly if hands lost
+                STATE.handDistance = 1; 
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+        cameraUtils.start();
+
+
+        // --- 6. ANIMATION & SMOOTHING (THE PHYSICS) ---
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // A. Smooth out the inputs (Low Pass Filter)
+            // This removes the "jitter" from the webcam data
+            STATE.smoothScale = lerp(STATE.smoothScale, STATE.handDistance, CONFIG.smoothing);
+            STATE.smoothRotation = lerp(STATE.smoothRotation, STATE.handAngle, CONFIG.smoothing);
+            STATE.smoothX = lerp(STATE.smoothX, STATE.handCenter.x, CONFIG.smoothing);
+            STATE.smoothY = lerp(STATE.smoothY, STATE.handCenter.y, CONFIG.smoothing);
+
+            // B. Apply Transforms to the Parent Group (Efficient)
+            // Instead of calculating every particle's rotation, we rotate the container
+            particles.rotation.z = STATE.smoothRotation;
+            particles.position.x = STATE.smoothX;
+            particles.position.y = STATE.smoothY;
+
+            // C. Particle Morphing
+            const positions = geometry.attributes.position.array;
+            
+            for(let i=0; i < CONFIG.particleCount; i++) {
+                const ix = i * 3;
+                const iy = i * 3 + 1;
+                const iz = i * 3 + 2;
+
+                // Target Position * Current Scale
+                const tx = targets[ix] * STATE.smoothScale;
+                const ty = targets[iy] * STATE.smoothScale;
+                const tz = targets[iz] * STATE.smoothScale;
+
+                // Move particle towards target (Morph effect)
+                positions[ix] += (tx - positions[ix]) * 0.06;
+                positions[iy] += (ty - positions[iy]) * 0.06;
+                positions[iz] += (tz - positions[iz]) * 0.06;
+            }
+
+            geometry.attributes.position.needsUpdate = true;
+            
+            // Subtle idle rotation
+            particles.rotation.y += 0.002;
+            
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // --- 7. UI HANDLERS ---
+        window.setShape = (shape) => {
+            updateTargets(shape);
+            document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        };
+
+        document.getElementById('colorPicker').addEventListener('input', (e) => {
+            const c = new THREE.Color(e.target.value);
+            const colors = geometry.attributes.color.array;
+            for(let i=0; i<CONFIG.particleCount*3; i+=3) {
+                colors[i] = c.r + (Math.random()*0.1);
+                colors[i+1] = c.g + (Math.random()*0.1);
+                colors[i+2] = c.b + (Math.random()*0.1);
+            }
+            geometry.attributes.color.needsUpdate = true;
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
