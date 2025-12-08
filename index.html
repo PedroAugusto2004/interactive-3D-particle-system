@@ -12,6 +12,8 @@
             background-color: #050505;
             font-family: 'Segoe UI', sans-serif;
             user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
         }
 
         canvas {
@@ -126,6 +128,60 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            #ui-container {
+                top: auto;
+                bottom: 20px;
+                right: 20px;
+                width: auto;
+                max-width: 180px;
+            }
+
+            .lil-gui {
+                --width: 180px;
+                /* Compact GUI */
+                max-height: 300px;
+                overflow-y: auto;
+            }
+
+            #video-preview {
+                width: 120px;
+                height: 90px;
+                bottom: auto;
+                top: 20px;
+                left: 20px;
+            }
+
+            #guide-panel {
+                bottom: auto;
+                top: 120px;
+                /* Below video */
+                left: 20px;
+                width: 150px;
+                padding: 10px;
+                font-size: 11px;
+                background: rgba(0, 0, 0, 0.5);
+            }
+
+            .guide-icon {
+                font-size: 16px;
+                width: 20px;
+            }
+
+            #hand-status {
+                top: 20px;
+                width: 100%;
+                text-align: center;
+                left: 0;
+                transform: none;
+                background: transparent;
+                border: none;
+                text-shadow: 0 0 5px #000;
+                pointer-events: none;
+            }
+        }
     </style>
 
     <script type="importmap">
@@ -185,8 +241,10 @@
         import GUI from 'lil-gui';
 
         // --- Configuration ---
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
         const CONFIG = {
-            particleCount: 25000,
+            particleCount: isMobile ? 12000 : 25000, // Optimize for mobile
             baseColor: '#00d2ff',
             glowIntensity: 1.5,
             particleSize: 0.29403, // UPDATED: Exact size requested
