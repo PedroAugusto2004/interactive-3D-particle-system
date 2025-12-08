@@ -23,10 +23,56 @@
         /* UI Overlay */
         #ui-container {
             position: absolute;
-            top: 20px;
+            top: 70px;
+            /* Moved down to make room for button */
             right: 20px;
             width: 300px;
             z-index: 10;
+            display: none;
+            /* Hidden by default */
+        }
+
+        #ui-container.active {
+            display: block;
+        }
+
+        /* Menu Toggle Button */
+        #menu-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #menu-toggle:hover {
+            background: rgba(40, 40, 40, 0.8);
+        }
+
+        #menu-toggle .line {
+            transition: transform 0.3s, opacity 0.3s;
+            transform-origin: center;
+        }
+
+        #menu-toggle.open .line-top {
+            transform: translateY(6px) rotate(45deg);
+        }
+
+        #menu-toggle.open .line-mid {
+            opacity: 0;
+        }
+
+        #menu-toggle.open .line-bot {
+            transform: translateY(-6px) rotate(-45deg);
         }
 
         /* Camera Preview (PIP style) */
@@ -132,37 +178,40 @@
         /* Mobile Adjustments */
         @media (max-width: 768px) {
             #ui-container {
-                top: auto;
-                bottom: 20px;
+                top: 65px;
+                /* Open below the button */
+                bottom: auto;
                 right: 20px;
                 width: auto;
                 max-width: 180px;
-            }
-
-            .lil-gui {
-                --width: 180px;
-                /* Compact GUI */
-                max-height: 300px;
+                max-height: 60vh;
                 overflow-y: auto;
             }
 
+            .lil-gui {
+                --width: 100%;
+            }
+
             #video-preview {
-                width: 120px;
-                height: 90px;
+                width: 100px;
+                height: 75px;
                 bottom: auto;
                 top: 20px;
                 left: 20px;
             }
 
             #guide-panel {
-                bottom: auto;
-                top: 120px;
-                /* Below video */
+                bottom: 20px;
+                top: auto;
                 left: 20px;
-                width: 150px;
-                padding: 10px;
-                font-size: 11px;
-                background: rgba(0, 0, 0, 0.5);
+                width: auto;
+                max-width: 60%;
+                padding: 8px;
+                font-size: 10px;
+                background: rgba(0, 0, 0, 0.4);
+                backdrop-filter: blur(4px);
+                border-radius: 6px;
+                pointer-events: none;
             }
 
             .guide-icon {
@@ -171,14 +220,16 @@
             }
 
             #hand-status {
-                top: 20px;
-                width: 100%;
-                text-align: center;
-                left: 0;
-                transform: none;
-                background: transparent;
-                border: none;
-                text-shadow: 0 0 5px #000;
+                top: 105px !important;
+                left: 20px !important;
+                right: auto;
+                transform: none !important;
+                width: auto !important;
+                text-align: left;
+                font-size: 11px !important;
+                padding: 4px 8px !important;
+                /* Keep background from JS but make it smaller */
+                text-shadow: none;
                 pointer-events: none;
             }
         }
@@ -233,6 +284,17 @@
     </div>
 
     <video id="video-preview" playsinline></video>
+
+    <!-- Menu Toggle -->
+    <button id="menu-toggle" aria-label="Toggle Controls">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line class="line line-top" x1="3" y1="6" x2="21" y2="6"></line>
+            <line class="line line-mid" x1="3" y1="12" x2="21" y2="12"></line>
+            <line class="line line-bot" x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+    </button>
+
     <div id="ui-container"></div>
 
     <script type="module">
@@ -503,9 +565,11 @@
         }
 
         // --- MediaPipe Hand Tracking ---
+        // --- MediaPipe Hand Tracking ---
+        let hands;
         function setupMediaPipe() {
             const videoElement = document.getElementById('video-preview');
-            const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+            hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 
             hands.setOptions({
                 maxNumHands: 2,
@@ -516,20 +580,48 @@
 
             hands.onResults(onHandResults);
 
-            const cameraUtils = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({ image: videoElement }); },
-                width: 320,
-                height: 240
-            });
-            cameraUtils.start()
-                .then(() => {
+            // Manual Camera Setup for better mobile support
+            const startCamera = async () => {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert("Camera API not supported. Please check permissions or use HTTPS.");
+                    document.getElementById('status-text').innerText = "Camera API Not Supported";
+                    return;
+                }
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'user', // Force front camera
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        }
+                    });
+                    videoElement.srcObject = stream;
+                    await videoElement.play();
+
+                    // Start detection loop
+                    detectHands();
+
+                    // Hide loader
                     document.getElementById('loader').style.opacity = 0;
                     setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
-                })
-                .catch(err => {
+
+                } catch (err) {
                     console.error("Camera failed", err);
-                    document.getElementById('status-text').innerText = "Camera Access Denied or Error.";
-                });
+                    alert("Camera Error: " + err.message); // Show error on mobile screen
+                    document.getElementById('status-text').innerText = "Camera Error: " + err.message;
+                }
+            };
+
+            startCamera();
+        }
+
+        async function detectHands() {
+            const videoElement = document.getElementById('video-preview');
+            if (!videoElement.paused && !videoElement.ended) {
+                await hands.send({ image: videoElement });
+            }
+            requestAnimationFrame(detectHands);
         }
 
         function onHandResults(results) {
@@ -622,6 +714,13 @@
         }
 
         init();
+
+        // Menu Toggle Logic
+        document.getElementById('menu-toggle').addEventListener('click', function () {
+            const ui = document.getElementById('ui-container');
+            ui.classList.toggle('active');
+            this.classList.toggle('open');
+        });
     </script>
 </body>
 
