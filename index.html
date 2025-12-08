@@ -1,13 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Particle System - Hand Tracking</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; user-select: none; }
-        canvas { display: block; }
-        
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
         /* UI Overlay */
         #ui-container {
             position: absolute;
@@ -27,7 +37,8 @@
             border-radius: 12px;
             border: 2px solid rgba(255, 255, 255, 0.2);
             object-fit: cover;
-            transform: scaleX(-1); /* Mirror effect */
+            transform: scaleX(-1);
+            /* Mirror effect */
             z-index: 5;
             background: #000;
             opacity: 0.8;
@@ -48,9 +59,23 @@
             z-index: 5;
             pointer-events: none;
         }
-        .guide-item { display: flex; align-items: center; margin-bottom: 8px; }
-        .guide-icon { font-size: 20px; margin-right: 10px; width: 25px; text-align: center; }
-        .guide-text { opacity: 0.9; }
+
+        .guide-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .guide-icon {
+            font-size: 20px;
+            margin-right: 10px;
+            width: 25px;
+            text-align: center;
+        }
+
+        .guide-text {
+            opacity: 0.9;
+        }
 
         /* Hand Status Indicator */
         #hand-status {
@@ -72,7 +97,10 @@
         /* Loading Overlay */
         #loader {
             position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: #000;
             display: flex;
             flex-direction: column;
@@ -82,17 +110,24 @@
             z-index: 20;
             transition: opacity 0.5s;
         }
+
         .spinner {
-            width: 40px; height: 40px;
+            width: 40px;
+            height: 40px;
             border: 4px solid #333;
             border-top: 4px solid #00d2ff;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-bottom: 20px;
         }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
-    
+
     <script type="importmap">
         {
             "imports": {
@@ -102,12 +137,15 @@
             }
         }
     </script>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
+
 <body>
 
     <div id="loader">
@@ -132,6 +170,10 @@
             <span class="guide-icon">✋</span>
             <span class="guide-text"><strong>Open Hand:</strong> Expand / Relax</span>
         </div>
+        <div class="guide-item">
+            <span class="guide-icon">👐</span>
+            <span class="guide-text"><strong>Two Hands:</strong> Pinch to Scale</span>
+        </div>
     </div>
 
     <video id="video-preview" playsinline></video>
@@ -148,20 +190,22 @@
             baseColor: '#00d2ff',
             glowIntensity: 1.5,
             particleSize: 0.29403, // UPDATED: Exact size requested
-            shape: 'Heart',
+            shape: 'Sphere',
             cameraZ: 30,
             tensionSensitivity: 2.0
         };
 
         // --- Globals ---
         let scene, camera, renderer, particles, geometry, material, controls;
-        let targetPositions = []; 
-        let currentPositions = []; 
-        let handTension = 0; 
+        let targetPositions = [];
+        let currentPositions = [];
+        let handTension = 0;
         let isHandDetected = false;
-        
+        let isTwoHandsDetected = false;
+        let twoHandDistance = 0;
+
         // Hand tracking for rotation
-        let handCentroid = { x: 0.5, y: 0.5 }; 
+        let handCentroid = { x: 0.5, y: 0.5 };
         let targetRotationX = 0;
         let targetRotationY = 0;
 
@@ -187,7 +231,7 @@
 
             // 2. Particle System Setup
             createParticleSystem();
-            generateShapeData('Heart'); 
+            generateShapeData('Sphere');
 
             // 3. UI Setup
             setupGUI();
@@ -209,7 +253,7 @@
 
             for (let i = 0; i < CONFIG.particleCount * 3; i++) {
                 positions[i] = (Math.random() - 0.5) * 50;
-                colors[i] = 1.0; 
+                colors[i] = 1.0;
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -234,7 +278,7 @@
 
             targetPositions = new Float32Array(CONFIG.particleCount * 3);
             currentPositions = new Float32Array(CONFIG.particleCount * 3);
-            for(let i=0; i< CONFIG.particleCount*3; i++) currentPositions[i] = positions[i];
+            for (let i = 0; i < CONFIG.particleCount * 3; i++) currentPositions[i] = positions[i];
         }
 
         // --- Math & Shape Generation ---
@@ -254,14 +298,14 @@
                         const t2 = Math.random() * Math.PI * 2;
                         const rH = 0.5;
                         x = 16 * Math.pow(Math.sin(t2), 3) * rH;
-                        y = (13 * Math.cos(t2) - 5 * Math.cos(2*t2) - 2 * Math.cos(3*t2) - Math.cos(4*t2)) * rH;
-                        z = (Math.random() - 0.5) * 5; 
-                        x *= (0.8 + Math.random()*0.2);
-                        y *= (0.8 + Math.random()*0.2);
+                        y = (13 * Math.cos(t2) - 5 * Math.cos(2 * t2) - 2 * Math.cos(3 * t2) - Math.cos(4 * t2)) * rH;
+                        z = (Math.random() - 0.5) * 5;
+                        x *= (0.8 + Math.random() * 0.2);
+                        y *= (0.8 + Math.random() * 0.2);
                         break;
                     case 'Flower':
                         const f_ang = Math.random() * Math.PI * 2;
-                        const k = 4; 
+                        const k = 4;
                         const rad = 10 * Math.cos(k * f_ang);
                         x = rad * Math.cos(f_ang);
                         y = rad * Math.sin(f_ang);
@@ -278,36 +322,21 @@
                             const ang = Math.random() * Math.PI * 2;
                             x = r * Math.cos(ang);
                             z = r * Math.sin(ang);
-                            y = (Math.random() - 0.5) * 0.5; 
+                            y = (Math.random() - 0.5) * 0.5;
                             const tilt = Math.PI / 6;
                             const y_t = y * Math.cos(tilt) - z * Math.sin(tilt);
                             const z_t = y * Math.sin(tilt) + z * Math.cos(tilt);
-                            y=y_t; z=z_t;
+                            y = y_t; z = z_t;
                         }
                         break;
-                    case 'Buddha':
-                        if (i < count * 0.15) {
-                            const r = 2.5;
-                            x = r * Math.sin(phi) * Math.cos(theta);
-                            y = r * Math.sin(phi) * Math.sin(theta) + 4;
-                            z = r * Math.cos(phi);
-                        } else if (i < count * 0.6) {
-                            const h = 8 * Math.random(); 
-                            const r = 3 + (8-h)*0.3;
-                            const ang = Math.random() * Math.PI * 2;
-                            x = r * Math.cos(ang);
-                            y = h - 4;
-                            z = r * Math.sin(ang) * 0.6;
-                        } else {
-                            const r = 6 * Math.random() + 2;
-                            const ang = Math.random() * Math.PI; 
-                            x = r * Math.cos(ang) * 1.5;
-                            y = -5 + Math.random();
-                            z = r * Math.sin(ang);
-                        }
+                    case 'Sphere':
+                        const rS = 10;
+                        x = rS * Math.sin(phi) * Math.cos(theta);
+                        y = rS * Math.sin(phi) * Math.sin(theta);
+                        z = rS * Math.cos(phi);
                         break;
                     case 'Fireworks':
-                        const r = 15 * Math.cbrt(Math.random()); 
+                        const r = 15 * Math.cbrt(Math.random());
                         x = r * Math.sin(phi) * Math.cos(theta);
                         y = r * Math.sin(phi) * Math.sin(theta);
                         z = r * Math.cos(phi);
@@ -324,10 +353,11 @@
             requestAnimationFrame(animate);
 
             const positions = geometry.attributes.position.array;
-            
+
             let targetScale = 1.0;
             const moveSpeed = 0.05;
 
+            // --- Hand Control Logic ---
             // --- Hand Control Logic ---
             if (isHandDetected) {
                 // 1. Disable OrbitControls AutoRotate so hand takes over
@@ -337,7 +367,7 @@
                 // 2. Map Hand Position to Scene Rotation
                 // Hand X (0 to 1) -> Rotate Y (-PI to PI)
                 // Hand Y (0 to 1) -> Rotate X (-PI/2 to PI/2)
-                const sensitivity = 2.0; 
+                const sensitivity = 2.0;
                 targetRotationY = (handCentroid.x - 0.5) * sensitivity * Math.PI;
                 targetRotationX = (handCentroid.y - 0.5) * sensitivity * Math.PI;
 
@@ -345,23 +375,48 @@
                 scene.rotation.y += (targetRotationY - scene.rotation.y) * 0.1;
                 scene.rotation.x += (targetRotationX - scene.rotation.x) * 0.1;
 
-                // 3. Tension Logic (Scaling)
-                targetScale = 1.0 - (handTension * 0.8); 
-                
-                // Visual Feedback
-                material.color.setHSL(0.6 - (handTension * 0.4), 1.0, 0.5); // Blue to Green/Yellow
-                document.getElementById('hand-status').style.opacity = 1;
+                // 3. Scale & Logic
+                if (isTwoHandsDetected) {
+                    // Two Hand Mode: Distance determines scale
+                    // Map distance (approx 0.1 to 0.8) to scale (0.5 to 2.5)
+                    const scaleFactor = (twoHandDistance * 3.0) + 0.2;
+                    targetScale = Math.max(0.1, scaleFactor);
+
+                    // Visual Feedback for 2 hands
+                    material.color.setHSL(0.0 + (twoHandDistance * 0.5), 1.0, 0.6); // Dynamic Color
+
+                    const statusEl = document.getElementById('hand-status');
+                    statusEl.innerText = "SCALING MODE";
+                    statusEl.style.opacity = 1;
+                    statusEl.style.borderColor = "#ff0055";
+                    statusEl.style.color = "#ff0055";
+                    statusEl.style.background = "rgba(255, 0, 85, 0.1)";
+
+                } else {
+                    // Single Hand Mode: Tension determines compression
+                    targetScale = 1.0 - (handTension * 0.8);
+
+                    // Visual Feedback
+                    material.color.setHSL(0.6 - (handTension * 0.4), 1.0, 0.5); // Blue to Green/Yellow
+
+                    const statusEl = document.getElementById('hand-status');
+                    statusEl.innerText = "HAND DETECTED";
+                    statusEl.style.opacity = 1;
+                    statusEl.style.borderColor = "#00d2ff";
+                    statusEl.style.color = "#00d2ff";
+                    statusEl.style.background = "rgba(0, 210, 255, 0.1)";
+                }
 
             } else {
                 // Re-enable Mouse/Auto controls
                 controls.enabled = true;
                 controls.autoRotate = true;
                 controls.update(); // OrbitControls handles rotation
-                
+
                 // Reset scene manual rotation slowly so it doesn't snap
                 scene.rotation.y += (0 - scene.rotation.y) * 0.05;
                 scene.rotation.x += (0 - scene.rotation.x) * 0.05;
-                
+
                 material.color.set(CONFIG.baseColor);
                 document.getElementById('hand-status').style.opacity = 0;
             }
@@ -392,10 +447,10 @@
         // --- MediaPipe Hand Tracking ---
         function setupMediaPipe() {
             const videoElement = document.getElementById('video-preview');
-            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 
             hands.setOptions({
-                maxNumHands: 1,
+                maxNumHands: 2,
                 modelComplexity: 1,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
@@ -404,7 +459,7 @@
             hands.onResults(onHandResults);
 
             const cameraUtils = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
+                onFrame: async () => { await hands.send({ image: videoElement }); },
                 width: 320,
                 height: 240
             });
@@ -420,43 +475,71 @@
         }
 
         function onHandResults(results) {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+
+            if (numHands > 0) {
                 isHandDetected = true;
-                const landmarks = results.multiHandLandmarks[0];
+                isTwoHandsDetected = (numHands === 2);
 
-                // 1. Get Centroid (Approximate using wrist + middle finger knuckle)
-                // Wrist: 0, Middle Base: 9
-                const wrist = landmarks[0];
-                const middleBase = landmarks[9];
-                
-                // Update Global Centroid (averaged for smoothness)
-                // Note: MediaPipe X is normalized 0-1 (Left-Right)
-                // We flip X because webcam is usually mirrored
-                const rawX = 1.0 - ((wrist.x + middleBase.x) / 2); 
-                const rawY = (wrist.y + middleBase.y) / 2;
-                
-                handCentroid.x += (rawX - handCentroid.x) * 0.1;
-                handCentroid.y += (rawY - handCentroid.y) * 0.1;
+                if (isTwoHandsDetected) {
+                    const hand1 = results.multiHandLandmarks[0];
+                    const hand2 = results.multiHandLandmarks[1];
 
-                // 2. Calculate Tension
-                const tips = [4, 8, 12, 16, 20];
-                let totalDist = 0;
-                tips.forEach(idx => {
-                    const tip = landmarks[idx];
-                    const dist = Math.sqrt(
-                        Math.pow(tip.x - wrist.x, 2) + 
-                        Math.pow(tip.y - wrist.y, 2) + 
-                        Math.pow(tip.z - wrist.z, 2)
-                    );
-                    totalDist += dist;
-                });
-                const avgDist = totalDist / 5;
-                let rawTension = (0.4 - avgDist) / 0.3; 
-                rawTension = Math.max(0, Math.min(1, rawTension));
-                handTension += (rawTension - handTension) * 0.1;
+                    // 1. Calculate Midpoint for Rotation (Average of both wrists)
+                    const x1 = 1.0 - hand1[0].x; // Flip X
+                    const y1 = hand1[0].y;
+                    const x2 = 1.0 - hand2[0].x; // Flip X
+                    const y2 = hand2[0].y;
 
+                    const midX = (x1 + x2) / 2;
+                    const midY = (y1 + y2) / 2;
+
+                    handCentroid.x += (midX - handCentroid.x) * 0.1;
+                    handCentroid.y += (midY - handCentroid.y) * 0.1;
+
+                    // 2. Calculate Distance for Scaling
+                    const dx = x1 - x2;
+                    const dy = y1 - y2;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    // Smooth the distance
+                    twoHandDistance += (dist - twoHandDistance) * 0.1;
+
+                } else {
+                    // Single Hand Logic (Existing)
+                    const landmarks = results.multiHandLandmarks[0];
+
+                    // 1. Get Centroid (Approximate using wrist + middle finger knuckle)
+                    const wrist = landmarks[0];
+                    const middleBase = landmarks[9];
+
+                    // Update Global Centroid (averaged for smoothness)
+                    const rawX = 1.0 - ((wrist.x + middleBase.x) / 2);
+                    const rawY = (wrist.y + middleBase.y) / 2;
+
+                    handCentroid.x += (rawX - handCentroid.x) * 0.1;
+                    handCentroid.y += (rawY - handCentroid.y) * 0.1;
+
+                    // 2. Calculate Tension
+                    const tips = [4, 8, 12, 16, 20];
+                    let totalDist = 0;
+                    tips.forEach(idx => {
+                        const tip = landmarks[idx];
+                        const dist = Math.sqrt(
+                            Math.pow(tip.x - wrist.x, 2) +
+                            Math.pow(tip.y - wrist.y, 2) +
+                            Math.pow(tip.z - wrist.z, 2)
+                        );
+                        totalDist += dist;
+                    });
+                    const avgDist = totalDist / 5;
+                    let rawTension = (0.4 - avgDist) / 0.3;
+                    rawTension = Math.max(0, Math.min(1, rawTension));
+                    handTension += (rawTension - handTension) * 0.1;
+                }
             } else {
                 isHandDetected = false;
+                isTwoHandsDetected = false;
                 handTension = 0;
             }
         }
@@ -466,11 +549,11 @@
             gui.title("Particle Controls");
             const folderAppearance = gui.addFolder('Appearance');
             folderAppearance.addColor(CONFIG, 'baseColor').name('Color').onChange(v => {
-                if(!isHandDetected) material.color.set(v);
+                if (!isHandDetected) material.color.set(v);
             });
             folderAppearance.add(CONFIG, 'particleSize', 0.01, 1.0).name('Size').onChange(v => material.size = v);
             const folderShape = gui.addFolder('Templates');
-            const shapes = ['Heart', 'Flower', 'Saturn', 'Buddha', 'Fireworks'];
+            const shapes = ['Sphere', 'Heart', 'Flower', 'Saturn', 'Fireworks'];
             folderShape.add(CONFIG, 'shape', shapes).name('Shape').onChange(v => generateShapeData(v));
         }
 
@@ -483,4 +566,5 @@
         init();
     </script>
 </body>
+
 </html>
